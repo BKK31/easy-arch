@@ -272,8 +272,6 @@ do
     break
 done
 
-# Setting up LUKS password.
-until lukspass_selector; do : ; done
 
 # Setting up the kernel.
 until kernel_selector; do : ; done
@@ -302,16 +300,16 @@ info_print "Wiping $DISK."
 wipefs -af "$DISK" &>/dev/null
 sgdisk -Zo "$DISK" &>/dev/null
 
-# Creating a new partition scheme.
+# Creating the partitions on $DISK.
 info_print "Creating the partitions on $DISK."
 parted -s "$DISK" \
     mklabel gpt \
     mkpart ESP fat32 1MiB 1025MiB \
     set 1 esp on \
-    mkpart CRYPTROOT 1025MiB 100% \
+    mkpart BTRFS 1025MiB 100% \
 
 ESP="/dev/disk/by-partlabel/ESP"
-CRYPTROOT="/dev/disk/by-partlabel/CRYPTROOT"
+BTRFS_PART="/dev/disk/by-partlabel/BTRFS"
 
 # Informing the Kernel of the changes.
 info_print "Informing the Kernel about the disk changes."
@@ -321,16 +319,11 @@ partprobe "$DISK"
 info_print "Formatting the EFI Partition as FAT32."
 mkfs.fat -F 32 "$ESP" &>/dev/null
 
-# Creating a LUKS Container for the root partition.
-info_print "Creating LUKS Container for the root partition."
-echo -n "$password" | cryptsetup luksFormat "$CRYPTROOT" -d - &>/dev/null
-echo -n "$password" | cryptsetup open "$CRYPTROOT" cryptroot -d - 
-BTRFS="/dev/mapper/cryptroot"
+# Formatting the BTRFS Partition.
+info_print "Formatting the BTRFS partition."
+mkfs.btrfs "$BTRFS_PART" &>/dev/null
+mount "$BTRFS_PART" /mnt
 
-# Formatting the LUKS Container as BTRFS.
-info_print "Formatting the LUKS container as BTRFS."
-mkfs.btrfs "$BTRFS" &>/dev/null
-mount "$BTRFS" /mnt
 
 # Creating BTRFS subvolumes.
 info_print "Creating BTRFS subvolumes."
