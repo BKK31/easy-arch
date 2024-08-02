@@ -45,3 +45,6 @@ The **BTRFS subvolumes layout** follows the traditional and suggested layout use
 | 5                | @snapshots     | /.snapshots                   |
 | 6                | @var_log       | /var/log                      |
 | 7                | @var_pkgs      | /var/cache/pacman/pkg         |
+
+
+## Note: This implementation aims at achieving an arch linux installation with just btrfs but is currently on haitus
