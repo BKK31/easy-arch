@@ -309,7 +309,7 @@ parted -s "$DISK" \
     mkpart BTRFS 1025MiB 100% \
 
 ESP="/dev/disk/by-partlabel/ESP"
-BTRFS_PART="/dev/disk/by-partlabel/BTRFS"
+BTRFS="/dev/disk/by-partlabel/BTRFS"
 
 # Informing the Kernel of the changes.
 info_print "Informing the Kernel about the disk changes."
@@ -321,8 +321,8 @@ mkfs.fat -F 32 "$ESP" &>/dev/null
 
 # Formatting the BTRFS Partition.
 info_print "Formatting the BTRFS partition."
-mkfs.btrfs -f "$BTRFS_PART" &>/dev/null
-mount "$BTRFS_PART" /mnt
+mkfs.btrfs -f "$BTRFS" &>/dev/null
+mount "$BTRFS" /mnt
 
 
 # Creating BTRFS subvolumes.q
