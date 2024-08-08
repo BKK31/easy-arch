@@ -382,17 +382,6 @@ virt_check
 # Setting up the network.
 network_installer
 
-# Configuring /etc/mkinitcpio.conf.
-info_print "Configuring /etc/mkinitcpio.conf."
-cat > /mnt/etc/mkinitcpio.conf <<EOF
-HOOKS=(systemd autodetect keyboard sd-vconsole modconf block sd-encrypt filesystems)
-EOF
-
-# Setting up LUKS2 encryption in grub.
-info_print "Setting up grub config."
-UUID=$(blkid -s UUID -o value $CRYPTROOT)
-sed -i "\,^GRUB_CMDLINE_LINUX=\"\",s,\",&rd.luks.name=$UUID=cryptroot root=$BTRFS," /mnt/etc/default/grub
-
 # Configuring the system.
 info_print "Configuring the system (timezone, system clock, initramfs, Snapper, GRUB)."
 arch-chroot /mnt /bin/bash -e <<EOF
