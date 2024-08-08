@@ -306,7 +306,7 @@ parted -s "$DISK" \
     mklabel gpt \
     mkpart ESP fat32 1MiB 1025MiB \
     set 1 esp on \
-    mkpart BTRFS 1025MiB 100% \
+    mkpart BTRFS 1025MiB 100% 
 
 ESP="/dev/disk/by-partlabel/ESP"
 BTRFS="/dev/disk/by-partlabel/BTRFS"
@@ -325,7 +325,7 @@ mkfs.btrfs -f "$BTRFS" &>/dev/null
 mount "$BTRFS" /mnt
 
 
-# Creating BTRFS subvolumes.q
+# Creating BTRFS subvolumes.
 info_print "Creating BTRFS subvolumes."
 subvols=(snapshots var_pkgs var_log home root srv)
 for subvol in '' "${subvols[@]}"; do
@@ -345,7 +345,7 @@ chmod 750 /mnt/root
 mount -o "$mountopts",subvol=@snapshots "$BTRFS" /mnt/.snapshots
 mount -o "$mountopts",subvol=@var_pkgs "$BTRFS" /mnt/var/cache/pacman/pkg
 chattr +C /mnt/var/log
-mount "$ESP" /mnt/boot/
+mount "$ESP" /mnt/boot
 
 # Checking the microcode to install.
 microcode_detector
