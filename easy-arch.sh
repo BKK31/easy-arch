@@ -395,13 +395,6 @@ arch-chroot /mnt /bin/bash -e <<EOF
     # Generating locales.
     locale-gen &>/dev/null
 
-    # Create SecureBoot keys. 
-    # This isn't strictly necessary, linux-hardened preset expects it and mkinitcpio will fail without it
-    sbctl create-keys
-
-    # Generating a new initramfs.
-    mkinitcpio -P &>/dev/null
-
     # Snapper configuration.
     umount /.snapshots
     rm -r /.snapshots
