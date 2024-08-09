@@ -117,25 +117,31 @@ network_installer () {
     esac
 }
 
-# User enters a password for the LUKS Container (function).
-lukspass_selector () {
-    input_print "Please enter a password for the LUKS container (you're not going to see the password): "
-    read -r -s password
-    if [[ -z "$password" ]]; then
-        echo
-        error_print "You need to enter a password for the LUKS Container, please try again."
-        return 1
-    fi
-    echo
-    input_print "Please enter the password for the LUKS container again (you're not going to see the password): "
-    read -r -s password2
-    echo
-    if [[ "$password" != "$password2" ]]; then
-        error_print "Passwords don't match, please try again."
-        return 1
-    fi
-    return 0
+# Selecting and installing a desktop environment (function).
+desktop_installer () {
+    info_print "Desktop Environment options:"
+    info_print "1) GNOME: A popular, user-friendly desktop environment"
+    info_print "2) KDE Plasma: A highly customizable and feature-rich desktop environment"
+    info_print "3) None: I don't want to install a desktop environment"
+    input_print "Please select the number of the corresponding desktop environment (e.g. 1): "
+    read -r de_choice
+
+    case $de_choice in
+        1 ) info_print "Installing GNOME desktop environment."
+            pacstrap /mnt gnome gnome-extra gdm >/dev/null
+            systemctl enable gdm --root=/mnt &>/dev/null
+            ;;
+        2 ) info_print "Installing KDE Plasma desktop environment."
+            pacstrap /mnt plasma-meta sddm >/dev/null
+            systemctl enable sddm --root=/mnt &>/dev/null
+            ;;
+        3 ) info_print "Skipping desktop environment installation."
+            ;;
+        * ) error_print "You did not enter a valid selection, skipping desktop environment installation."
+            ;;
+    esac
 }
+
 
 # Setting up a password for the user account (function).
 userpass_selector () {
@@ -246,6 +252,32 @@ keyboard_selector () {
     esac
 }
 
+# User chooses whether to enable chaotic-aur repository (function).
+chaotic_aur_selector () {
+    input_print "Do you want to enable the chaotic-aur repository? [Y/n]: "
+    read -r chaotic_aur_response
+    case "${chaotic_aur_response,,}" in
+        n|no)
+            info_print "The chaotic-aur repository will not be enabled."
+            chaotic_aur_enabled=false
+            ;;
+        y|yes|'')
+            info_print "The chaotic-aur repository will be enabled."
+            chaotic_aur_enabled=true
+            ;;
+        *)
+            error_print "Invalid input. Defaulting to Yes."
+            info_print "The chaotic-aur repository will be enabled."
+            chaotic_aur_enabled=true
+            ;;
+    esac
+    return 0
+}
+
+
+
+
+
 # Welcome screen.
 echo -ne "${BOLD}${BYELLOW}
 ======================================================================
@@ -306,10 +338,10 @@ parted -s "$DISK" \
     mklabel gpt \
     mkpart ESP fat32 1MiB 1025MiB \
     set 1 esp on \
-    mkpart BTRFS 1025MiB 100% 
+    mkpart EXT4 1025MiB 100% 
 
 ESP="/dev/disk/by-partlabel/ESP"
-BTRFS="/dev/disk/by-partlabel/BTRFS"
+EXT4="/dev/disk/by-partlabel/EXT4"
 
 mkdir -p /mnt/efi
 
@@ -321,40 +353,18 @@ partprobe "$DISK"
 info_print "Formatting the EFI Partition as FAT32."
 mkfs.fat -F 32 "$ESP" &>/dev/null
 
-# Formatting the BTRFS Partition.
-info_print "Formatting the BTRFS partition."
-mkfs.btrfs -f "$BTRFS" &>/dev/null
-mount "$BTRFS" /mnt
-
-
-# Creating BTRFS subvolumes.
-info_print "Creating BTRFS subvolumes."
-subvols=(snapshots var_pkgs var_log home root srv)
-for subvol in '' "${subvols[@]}"; do
-    btrfs su cr /mnt/@"$subvol" &>/dev/null
-done
-
-# Mounting the newly created subvolumes.
-umount /mnt
-info_print "Mounting the newly created subvolumes."
-mountopts="ssd,noatime,compress-force=zstd:3,discard=async"
-mount -o "$mountopts",subvol=@ "$BTRFS" /mnt
-mkdir -p /mnt/{home,root,srv,.snapshots,var/{log,cache/pacman/pkg},boot}
-for subvol in "${subvols[@]:2}"; do
-    mount -o "$mountopts",subvol=@"$subvol" "$BTRFS" /mnt/"${subvol//_//}"
-done
-chmod 750 /mnt/root
-mount -o "$mountopts",subvol=@snapshots "$BTRFS" /mnt/.snapshots
-mount -o "$mountopts",subvol=@var_pkgs "$BTRFS" /mnt/var/cache/pacman/pkg
-chattr +C /mnt/var/log
-mount "$ESP" /mnt/boot
+# Formatting the EXT4 Partition.
+info_print "Formatting the EXT4 partition."
+mkfs.ext4 -f "$EXT4" &>/dev/null
+mount "$EXT4" /mnt
+mount "$ESP" /mnt/efi
 
 # Checking the microcode to install.
 microcode_detector
 
 # Pacstrap (setting up a base sytem onto the new root).
 info_print "Installing the base system (it may take a while)."
-pacstrap -K /mnt base "$kernel" "$microcode" linux-firmware "$kernel"-headers sbctl btrfs-progs grub grub-btrfs rsync efibootmgr snapper reflector snap-pac zram-generator sudo &>/dev/null
+pacstrap -K /mnt base "$kernel" "$microcode" linux-firmware "$kernel"-headers grub efibootmgr base-devel git fastfetch bluez bluez-utils blueman os-prober mtools dosfstools ntfs-3g dialog xdg-utils xdg-user-dirs wget &>/dev/null
 
 # Setting up the hostname.
 echo "$hostname" > /mnt/etc/hostname
@@ -383,7 +393,7 @@ virt_check
 network_installer
 
 # Configuring the system.
-info_print "Configuring the system (timezone, system clock, initramfs, Snapper, GRUB)."
+info_print "Configuring the system (timezone, system clock, GRUB)."
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Setting up timezone.
@@ -395,15 +405,7 @@ arch-chroot /mnt /bin/bash -e <<EOF
     # Generating locales.
     locale-gen &>/dev/null
 
-    # Snapper configuration.
-    umount /.snapshots
-    rm -r /.snapshots
-    snapper --no-dbus -c root create-config /
-    btrfs subvolume delete /.snapshots &>/dev/null
-    mkdir /.snapshots
-    mount -a &>/dev/null
-    chmod 750 /.snapshots
-
+   
     # Installing GRUB.
     grub-install --target=x86_64-efi --efi-directory=/efi --bootloader-id=GRUB &>/dev/null
 
@@ -411,6 +413,13 @@ arch-chroot /mnt /bin/bash -e <<EOF
     grub-mkconfig -o /boot/grub/grub.cfg &>/dev/null
 
 EOF
+
+# Enabling the chaotic-aur repository.
+chaotic_aur_selector
+
+if [ "$chaotic_aur_enabled" = true ]; then
+    wget -q -O chaotic-AUR-installer.bash https://raw.githubusercontent.com/SharafatKarim/chaotic-AUR-installer/main/install.bash && sudo bash chaotic-AUR-installer.bash && rm chaotic-AUR-installer.bash
+fi
 
 # Setting root password.
 info_print "Setting root password."
@@ -425,38 +434,15 @@ if [[ -n "$username" ]]; then
     echo "$username:$userpass" | arch-chroot /mnt chpasswd
 fi
 
-# Boot backup hook.
-info_print "Configuring /boot backup when pacman transactions are made."
-mkdir /mnt/etc/pacman.d/hooks
-cat > /mnt/etc/pacman.d/hooks/50-bootbackup.hook <<EOF
-[Trigger]
-Operation = Upgrade
-Operation = Install
-Operation = Remove
-Type = Path
-Target = usr/lib/modules/*/vmlinuz
 
-[Action]
-Depends = rsync
-Description = Backing up /boot...
-When = PostTransaction
-Exec = /usr/bin/rsync -a --delete /boot /.bootbackup
-EOF
-
-# ZRAM configuration.
-info_print "Configuring ZRAM."
-cat > /mnt/etc/systemd/zram-generator.conf <<EOF
-[zram0]
-zram-size = min(ram, 8192)
-EOF
 
 # Pacman eye-candy features.
 info_print "Enabling colours, animations, and parallel downloads for pacman."
-sed -Ei 's/^#(Color)$/\1\nILoveCandy/;s/^#(ParallelDownloads).*/\1 = 10/' /mnt/etc/pacman.conf
+sed -Ei 's/^#(Color)$/\1\nILoveCandy/;s/^#(ParallelDownloads).*/\1 = 5/' /mnt/etc/pacman.conf
 
 # Enabling various services.
-info_print "Enabling Reflector, automatic snapshots, BTRFS scrubbing and systemd-oomd."
-services=(reflector.timer snapper-timeline.timer snapper-cleanup.timer btrfs-scrub@-.timer btrfs-scrub@home.timer btrfs-scrub@var-log.timer btrfs-scrub@\\x2esnapshots.timer grub-btrfsd.service systemd-oomd)
+info_print "Enabling Bluetooth, NetworkManager"
+services=(bluetooth.service NetworkManager.service)
 for service in "${services[@]}"; do
     systemctl enable "$service" --root=/mnt &>/dev/null
 done
